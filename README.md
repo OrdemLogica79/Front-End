@@ -1,2 +1,2 @@
 # Front-End
-Trabalado da Faculdade
+Trabalho da Faculdade.
