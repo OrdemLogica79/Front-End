@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Gestão - Cliente</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .hidden { display: none; }
+        .loading-spinner { border-top-color: #3b82f6; animation: spinner 0.6s linear infinite; }
+        @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+
+    <div id="toast" class="fixed top-5 right-5 hidden z-50 p-4 rounded shadow-lg text-white"></div>
+
+    <section id="login-section" class="flex items-center justify-center min-h-screen">
+        <div class="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
+            <h1 class="text-2xl font-bold mb-6 text-center text-gray-800">Acesso ao Sistema</h1>
+            <form id="login-form" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">E-mail</label>
+                    <input type="email" id="login-email" required class="w-full p-2 border border-gray-300 rounded mt-1 focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Senha</label>
+                    <input type="password" id="login-password" required class="w-full p-2 border border-gray-300 rounded mt-1">
+                </div>
+                <button type="submit" id="btn-login" class="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 transition flex justify-center items-center">
+                    <span id="login-text">Entrar</span>
+                    <div id="login-loader" class="hidden loading-spinner w-5 h-5 border-2 border-white rounded-full ml-2"></div>
+                </button>
+            </form>
+            <p id="cold-start-msg" class="text-xs text-gray-500 mt-4 hidden text-center italic">
+                O servidor está despertando... isso pode levar até 30 segundos no primeiro acesso.
+            </p>
+        </div>
+    </section>
+
+    <section id="dashboard-section" class="hidden container mx-auto p-6">
+        <div class="flex justify-between items-center mb-8 bg-white p-4 rounded shadow">
+            <h2 class="text-xl font-semibold">Dashboard de Clientes</h2>
+            <div class="space-x-2">
+                <button onclick="showCadastro()" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition">Novo Cliente</button>
+                <button onclick="logout()" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 transition">Sair</button>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+                <thead class="bg-gray-50 border-b">
+                    <tr>
+                        <th class="p-4 font-medium text-gray-600">Nome</th>
+                        <th class="p-4 font-medium text-gray-600">CPF</th>
+                        <th class="p-4 font-medium text-gray-600">Telefone</th>
+                    </tr>
+                </thead>
+                <tbody id="clientes-lista" class="divide-y text-gray-700">
+                    </tbody>
+            </table>
+        </div>
+    </section>
+
+    <div id="modal-cadastro" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden">
+        <div class="bg-white p-8 rounded-lg w-full max-w-md">
+            <h2 class="text-xl font-bold mb-4">Cadastrar Novo Cliente</h2>
+            <form id="cadastro-form" class="space-y-3">
+                <input type="text" id="cad-nome" placeholder="Nome Completo" required class="w-full p-2 border rounded">
+                <input type="email" id="cad-email" placeholder="E-mail" required class="w-full p-2 border rounded">
+                <input type="text" id="cad-tel" placeholder="Telefone" required class="w-full p-2 border rounded">
+                <input type="text" id="cad-imei" placeholder="IMEI" required class="w-full p-2 border rounded">
+                <input type="date" id="cad-data" required class="w-full p-2 border rounded text-gray-500">
+                <div class="flex justify-end space-x-2 mt-4">
+                    <button type="button" onclick="hideCadastro()" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancelar</button>
+                    <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = "https://sistema-de-gest-o-de-clientes-e-pedidos-1.onrender.com";
+
+        // Gerenciamento de Telas
+        function checkAuth() {
+            const token = localStorage.getItem('access_token');
+            if (token) {
+                document.getElementById('login-section').classList.add('hidden');
+                document.getElementById('dashboard-section').classList.remove('hidden');
+                fetchClientes();
+            } else {
+                document.getElementById('login-section').classList.remove('hidden');
+                document.getElementById('dashboard-section').classList.add('hidden');
+            }
+        }
+
+        function showToast(msg, error = false) {
+            const toast = document.getElementById('toast');
+            toast.innerText = msg;
+            toast.className = `fixed top-5 right-5 z-50 p-4 rounded shadow-lg text-white ${error ? 'bg-red-500' : 'bg-green-500'}`;
+            toast.classList.remove('hidden');
+            setTimeout(() => toast.classList.add('hidden'), 5000);
+        }
+
+        // Login
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('login-email').value;
+            const password = document.getElementById('login-password').value;
+            const loader = document.getElementById('login-loader');
+            const msgCold = document.getElementById('cold-start-msg');
+
+            loader.classList.remove('hidden');
+            msgCold.classList.remove('hidden');
+
+            try {
+                const response = await fetch(`${API_BASE}/login/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    localStorage.setItem('access_token', data.access_token);
+                    checkAuth();
+                } else {
+                    showToast("Credenciais incorretas ou erro no servidor.", true);
+                }
+            } catch (err) {
+                showToast("Erro de conexão. O servidor pode estar iniciando.", true);
+            } finally {
+                loader.classList.add('hidden');
+            }
+        });
+
+        // Listagem
+        async function fetchClientes() {
+            const token = localStorage.getItem('access_token');
+            const tbody = document.getElementById('clientes-lista');
+            tbody.innerHTML = '<tr><td colspan="3" class="p-4 text-center">Carregando dados...</td></tr>';
+
+            try {
+                const response = await fetch(`${API_BASE}/clientes/meus-clientes`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (response.ok) {
+                    const clientes = await response.json();
+                    tbody.innerHTML = clientes.map(c => `
+                        <tr class="hover:bg-gray-50 transition">
+                            <td class="p-4">${c.nome}</td>
+                            <td class="p-4">${c.cpf || '***.***.***-**'}</td>
+                            <td class="p-4">${c.telefone}</td>
+                        </tr>
+                    `).join('');
+                } else if (response.status === 401) {
+                    logout();
+                }
+            } catch (err) {
+                showToast("Erro ao carregar clientes.", true);
+            }
+        }
+
+        // Cadastro
+        document.getElementById('cadastro-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const token = localStorage.getItem('access_token');
+            const payload = {
+                nome: document.getElementById('cad-nome').value,
+                email: document.getElementById('cad-email').value,
+                telefone: document.getElementById('cad-tel').value,
+                imei: document.getElementById('cad-imei').value,
+                data_venda: document.getElementById('cad-data').value
+            };
+
+            try {
+                const response = await fetch(`${API_BASE}/clientes/cadastro`, {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (response.ok) {
+                    showToast("Cliente cadastrado com sucesso!");
+                    hideCadastro();
+                    fetchClientes();
+                } else {
+                    showToast("Erro ao cadastrar cliente.", true);
+                }
+            } catch (err) {
+                showToast("Erro de conexão.", true);
+            }
+        });
+
+        function logout() {
+            localStorage.removeItem('access_token');
+            checkAuth();
+        }
+
+        function showCadastro() { document.getElementById('modal-cadastro').classList.remove('hidden'); }
+        function hideCadastro() { document.getElementById('modal-cadastro').classList.add('hidden'); }
+
+        // Inicialização
+        window.onload = checkAuth;
+    </script>
+</body>
+</html>
